@@ -47,7 +47,7 @@ MYSQL_ROOT_PASS=""
 #SPHINX_VER="2.1.1-beta"
 SPHINX_VER="2.1.9-release"
 EVENTLOG_VER="0.2.13"
-SYSLOG_VER="3.4.7"
+SYSLOG_VER="3.4.8"
 GEOIP_DIR="/usr/share/GeoIP/"
 APACHE="apache2"
 
@@ -500,7 +500,7 @@ build_syslogng(){
 	fi
 	# Get and build syslog-ng
 	cd $TMP_DIR &&
-	curl -L "http://www.balabit.com/downloads/files/syslog-ng/open-source-edition/$SYSLOG_VER/source/eventlog_$EVENTLOG_VER.tar.gz" > "eventlog_$EVENTLOG_VER.tar.gz" &&
+	curl -L "http://www.balabit.com/downloads/syslog-ng/open-source-edition/$SYSLOG_VER/source/eventlog_$EVENTLOG_VER.tar.gz" > "eventlog_$EVENTLOG_VER.tar.gz" &&
 	tar xzvf "eventlog_$EVENTLOG_VER.tar.gz" &&
 	cd "eventlog-$EVENTLOG_VER" &&
 	./configure && make && make install &&
@@ -513,7 +513,7 @@ build_syslogng(){
 	fi 
 	ldconfig &&
 	cd $TMP_DIR &&
-	curl -L "http://www.balabit.com/downloads/files/syslog-ng/open-source-edition/$SYSLOG_VER/source/syslog-ng_$SYSLOG_VER.tar.gz" > "syslog-ng_$SYSLOG_VER.tar.gz" &&
+	curl -L "http://www.balabit.com/downloads/syslog-ng/open-source-edition/$SYSLOG_VER/source/syslog-ng_$SYSLOG_VER.tar.gz" > "syslog-ng_$SYSLOG_VER.tar.gz" &&
 	tar xzvf "syslog-ng_$SYSLOG_VER.tar.gz" &&
 	cd "syslog-ng-$SYSLOG_VER" &&
 	./configure "--prefix=$BASE_DIR/syslog-ng-$SYSLOG_VER" --enable-ipv6 && 
