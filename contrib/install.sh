@@ -10,7 +10,7 @@ export PATH=$PATH:/usr/local/bin
 
 # CONFIG VARIABLES
 BRANCH_NAME="master"
-ELSA_GIT_REPO="https://github.com/mcholste/elsa.git"
+ELSA_GIT_REPO="https://github.com/atsibulnik/elsa.git"
 BASE_DIR="/usr/local"
 DATA_DIR="/data"
 TMP_DIR="/tmp"
@@ -45,7 +45,7 @@ MYSQL_ROOT_PASS=""
 # These should be fine
 #SPHINX_VER="2.0.5-release"
 #SPHINX_VER="2.1.1-beta"
-SPHINX_VER="2.1.9-release"
+SPHINX_VER="2.2.11-release"
 EVENTLOG_VER="0.2.13"
 SYSLOG_VER="3.4.8"
 GEOIP_DIR="/usr/share/GeoIP/"
