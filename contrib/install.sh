@@ -21,7 +21,7 @@ USE_LOCAL_SYSLOG_CONF="0"
 # Enable to leave custom Apache config in place
 USE_LOCAL_APACHE_CONF="0"
 # Override this in /etc/elsa_vars.sh to be able to edit this file and not have a version from svn overwrite it
-USE_LOCAL_INSTALL="0"
+USE_LOCAL_INSTALL="1"
 # Set this to 1 if you want to use custom MySQL packages
 USE_LOCAL_MYSQL_PACKAGES=0
 
@@ -147,10 +147,13 @@ centos_get_node_packages(){
 	# Install required packages
 	yum -y update
 	if [ "$USE_LOCAL_MYSQL_PACKAGES" = 0 ]; then
-		yum -yq install mysql-server mysql-libs mysql-devel
+		if ! rpm -q --quiet mysql57-community-release; then
+			rpm -ivh https://dev.mysql.com/get/mysql57-community-release-el7-11.noarch.rpm
+		fi
+		yum -yq install mysql-server mysql-libs mysql-devel perl-DBD-MySQL
 	fi
 	
-	yum -yq install git flex bison ntpdate perl perl-devel curl make subversion gcc gcc-c++ pkg-config pkgconfig pcre-devel libcap-devel libnet-devel openssl-devel libopenssl-devel glib2-devel perl-Module-Build perl-Module-Install perl-CPAN perl-Test-Simple perl-ExtUtils-MakeMaker
+	yum -yq install git flex bison ntpdate perl perl-devel curl make subversion gcc gcc-c++ pkgconfig pcre-devel libcap-devel libnet-devel openssl-devel glib2-devel perl-Module-Build perl-Module-Install perl-CPAN perl-Test-Simple perl-ExtUtils-MakeMaker
 	
 	return $?
 }
@@ -604,6 +607,12 @@ allow_mysql_symbolic_links(){
 			return $?
 		fi
 	fi
+	
+	# Fix sql-mode for mysql 5.7
+	grep -P "^sql-mode=" $MYCNF
+	if [ $? -ne 0 ]; then
+	    echo 'sql-mode=""' >> $MYCNF
+	fi
 	return 0
 }
 
@@ -618,7 +627,14 @@ set_node_mysql(){
 	allow_mysql_symbolic_links
 	
 	# Install mysql schema
-	service $MYSQL_SERVICE_NAME start
+	#service $MYSQL_SERVICE_NAME start
+	systemctl start mysqld
+	
+	if [ $DISTRO = "centos" ]; then
+		MYSQL_ROOT_PASS=$(grep 'temporary password' /var/log/mysqld.log | perl -ne 'print $1 if /:\s(.+)$/')
+		#'Insert quote for mc editor :)
+		MYSQL_PASS_SWITCH="-p$MYSQL_ROOT_PASS"
+	fi
 	
 	# Set SELinux settings for the auxilliary MySQL dir if necessary
 	if [ -f /usr/sbin/selinuxenabled ]; then
@@ -629,17 +645,25 @@ set_node_mysql(){
 		fi
 	fi
 	
-	mysql -u$MYSQL_ROOT_USER $MYSQL_PASS_SWITCH -e "INSTALL PLUGIN archive SONAME 'ha_archive.so'";
+	# First update root password
+	mysql --connect-expired-password -u$MYSQL_ROOT_USER $MYSQL_PASS_SWITCH -e "ALTER USER 'root'@'localhost' IDENTIFIED BY 'Pass4r00t%'"
+	MYSQL_ROOT_PASS="Pass4r00t%"
+	MYSQL_PASS_SWITCH="-p$MYSQL_ROOT_PASS"
+	export MYSQL_PWD=Pass4r00t%
 	
-	mysqladmin -u$MYSQL_ROOT_USER $MYSQL_PASS_SWITCH create $MYSQL_NODE_DB && mysqladmin -u$MYSQL_ROOT_USER $MYSQL_PASS_SWITCH create syslog_data && 
-	mysql -u$MYSQL_ROOT_USER $MYSQL_PASS_SWITCH -e 'GRANT ALL ON syslog.* TO "'$MYSQL_USER'"@"localhost" IDENTIFIED BY "'$MYSQL_PASS'"' &&
-	mysql -u$MYSQL_ROOT_USER $MYSQL_PASS_SWITCH -e 'GRANT ALL ON syslog.* TO "'$MYSQL_USER'"@"%" IDENTIFIED BY "'$MYSQL_PASS'"' &&
-	mysql -u$MYSQL_ROOT_USER $MYSQL_PASS_SWITCH -e 'GRANT ALL ON syslog_data.* TO "'$MYSQL_USER'"@"localhost" IDENTIFIED BY "'$MYSQL_PASS'"' &&
-	mysql -u$MYSQL_ROOT_USER $MYSQL_PASS_SWITCH -e 'GRANT ALL ON syslog_data.* TO "'$MYSQL_USER'"@"%" IDENTIFIED BY "'$MYSQL_PASS'"'
+	mysql -u$MYSQL_ROOT_USER -e "INSTALL PLUGIN archive SONAME 'ha_archive.so'";
+	mysql -u$MYSQL_ROOT_USER -e "UNINSTALL PLUGIN validate_password";
+	
+	mysqladmin -u$MYSQL_ROOT_USER create $MYSQL_NODE_DB && mysqladmin -u$MYSQL_ROOT_USER $MYSQL_PASS_SWITCH create syslog_data && 
+	mysql -u$MYSQL_ROOT_USER -e 'GRANT ALL ON syslog.* TO "'$MYSQL_USER'"@"localhost" IDENTIFIED BY "'$MYSQL_PASS'"' &&
+	mysql -u$MYSQL_ROOT_USER -e 'GRANT ALL ON syslog.* TO "'$MYSQL_USER'"@"%" IDENTIFIED BY "'$MYSQL_PASS'"' &&
+	mysql -u$MYSQL_ROOT_USER -e 'GRANT ALL ON syslog_data.* TO "'$MYSQL_USER'"@"localhost" IDENTIFIED BY "'$MYSQL_PASS'"' &&
+	mysql -u$MYSQL_ROOT_USER -e 'GRANT ALL ON syslog_data.* TO "'$MYSQL_USER'"@"%" IDENTIFIED BY "'$MYSQL_PASS'"'
 	
 	# Above could fail with db already exists, but this is the true test for success
 	mysql -u$MYSQL_USER -p$MYSQL_PASS $MYSQL_NODE_DB -e "source $BASE_DIR/elsa/node/conf/schema.sql" &&
-	enable_service "$MYSQL_SERVICE_NAME"
+	#enable_service "$MYSQL_SERVICE_NAME"
+	systemctl enable mysqld
 	return $?
 }
 
@@ -1049,6 +1073,7 @@ build_web_perl(){
 }
 
 set_web_mysql(){
+	MYSQL_PASS_SWITCH="-pPass4r00t%"
 	# Test to see if schema is already installed
 	mysql "-h$MYSQL_HOST" "-P$MYSQL_PORT" "-u$MYSQL_USER" "-p$MYSQL_PASS" $MYSQL_DB -e "select count(*) from users"
 	if [ $? -eq 0 ]; then
@@ -1289,8 +1314,8 @@ centos_set_apache(){
 	cp $APACHE_CONF "$APACHE_CONF.elsabak"
 	set_apache_tuning $APACHE_CONF "prefork.c";
 	
-	service httpd restart
-	enable_service "httpd"
+	systemctl enable httpd
+	systemctl start httpd
 	# Set firewall
 	#echo "opening firewall port 80" &&
 	#cp /etc/sysconfig/iptables /etc/sysconfig/iptables.bak.elsa &&
@@ -1408,7 +1433,8 @@ if [ "$INSTALL" = "node" ]; then
 	fi
 elif [ "$INSTALL" = "web" ]; then
 	if [ "$OP" = "ALL" ]; then
-		for FUNCTION in "check_web_installed" $DISTRO"_get_web_packages" "set_date" "check_svn_proxy" "get_elsa_from_github" "get_cpanm" "build_web_perl" "set_web_mysql" "mk_web_dirs" $DISTRO"_set_apache" "set_cron" "set_logrotate" "set_version" "validate_config" ; do
+		#for FUNCTION in "check_web_installed" $DISTRO"_get_web_packages" "set_date" "check_svn_proxy" "get_elsa_from_github" "get_cpanm" "build_web_perl" "set_web_mysql" "mk_web_dirs" $DISTRO"_set_apache" "set_cron" "set_logrotate" "set_version" "validate_config" ; do
+		for FUNCTION in "set_web_mysql" "mk_web_dirs" $DISTRO"_set_apache" "set_cron" "set_logrotate" "set_version" "validate_config" ; do
 			exec_func $FUNCTION
 		done
 	elif [ "$OP" = "update" ]; then
